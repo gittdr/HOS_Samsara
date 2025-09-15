@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 load_dotenv()
 
-required_env_vars = ["API_TOKEN", "API_URL_TRIPS", "API_URL_ASSETS", "BD_DRIVER", "BD_SERVER", "BD_DATABASE", "BD_USERNAME", "BD_PASSWORD"]
+required_env_vars = ["API_TOKEN", "API_URL_TRIPS", "API_URL_ASSETS", "BD_DRIVER", "BD_SERVER", "BD_DATABASE", "BD_USERNAME", "BD_PASSWORD", "BD_TABLE"]
 missing_vars = [var for var in required_env_vars if not os.getenv(var)]
 existing_vars = [var for var in required_env_vars if os.getenv(var)]
 # print(str(existing_vars))
@@ -149,20 +149,21 @@ def save_to_database(data):
         'TrustServerCertificate=yes;'
         'Encrypt=yes;'
     )
+    bd = os.getenv('BD_TABLE')
     
     try:
         cursor = conn.cursor()
-    
+        cursor.execute(f"TRUNCATE TABLE {bd};")
+
         # Insertar los registros en la BD
         
         for trc in data:
-            cursor.execute("""
-                INSERT INTO samsara.HOS (idUnidad, nombreUnidad, fechaViaje, tiempoViaje, totalTiempoViaje)
+            cursor.execute(f"""
+                INSERT INTO {bd} (idUnidad, nombreUnidad, fechaViaje, tiempoViaje, totalTiempoViaje)
                 VALUES (?, ?, ?, ?, ?)
             """, trc['asset_id'], trc['asset_name'], ayer_inicio_mx.strftime('%Y-%m-%d'), trc['traveltimeSeconds'], trc['TravelTime'])
 
         conn.commit()
-        conn.close()
     except Exception as e:
         logging.error("Error al guardar en la base de datos: %s", e)
         if conn:
