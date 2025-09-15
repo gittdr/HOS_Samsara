@@ -150,18 +150,27 @@ def save_to_database(data):
         'Encrypt=yes;'
     )
     
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
     
-    # Insertar los registros en la BD
-    
-    for trc in data:
-        cursor.execute("""
-            INSERT INTO samsara.HOS (idUnidad, nombreUnidad, fechaViaje, tiempoViaje, totalTiempoViaje)
-            VALUES (?, ?, ?, ?, ?)
-        """, trc['asset_id'], trc['asset_name'], ayer_inicio_mx.strftime('%Y-%m-%d'), trc['traveltimeSeconds'], trc['TravelTime'])
+        # Insertar los registros en la BD
+        
+        for trc in data:
+            cursor.execute("""
+                INSERT INTO samsara.HOS (idUnidad, nombreUnidad, fechaViaje, tiempoViaje, totalTiempoViaje)
+                VALUES (?, ?, ?, ?, ?)
+            """, trc['asset_id'], trc['asset_name'], ayer_inicio_mx.strftime('%Y-%m-%d'), trc['traveltimeSeconds'], trc['TravelTime'])
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logging.error("Error al guardar en la base de datos: %s", e)
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
 
 
 start_ms = dt_to_ms(ayer_inicio_mx)
