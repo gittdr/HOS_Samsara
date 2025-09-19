@@ -1,6 +1,9 @@
+import glob
 import json
 import logging
 import requests
+import os, glob, pyodbc, subprocess, json
+
 from datetime import datetime, timedelta
 
 from app.config import API_URL_ASSETS, API_URL_TRIPS, auth_headers
@@ -19,6 +22,20 @@ log_filename = 'Logs\\test_log.log'
 # DONE: AJUSTAR PARA CLOUDWATCH
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+def _debug_odbc():
+    print("LD_LIBRARY_PATH:", os.environ.get("LD_LIBRARY_PATH"))
+    print("ODBCINSTINI:", os.environ.get("ODBCINSTINI"))
+    try:
+        out = subprocess.check_output(["cat", "/etc/odbcinst.ini"]).decode()
+        print("/etc/odbcinst.ini:\n", out)
+    except Exception as e:
+        print("cat /etc/odbcinst.ini error:", repr(e))
+    try:
+        print("pyodbc.drivers():", pyodbc.drivers())
+    except Exception as e:
+        print("pyodbc.drivers() error:", repr(e))
+    print("Driver files:", glob.glob("/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-*.so*"))
 
 def run() -> dict:
     hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -57,6 +74,7 @@ def run() -> dict:
 
 def lambda_handler(event, context):
     try:
+        _debug_odbc()
         res = run()
         return {"statusCode": 200, "body": json.dumps(res)}
     except Exception as e:

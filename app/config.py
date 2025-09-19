@@ -1,3 +1,4 @@
+import glob
 import os
 from dotenv import load_dotenv
 
@@ -27,8 +28,9 @@ API_URL_ASSETS = os.getenv("API_URL_ASSETS")
 BD_TABLE = os.getenv("BD_TABLE")
 
 def conn_str() -> str:
+    driver_path = sorted(glob.glob("/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-*.so*"))[0]
     return (
-        'DRIVER={ODBC Driver 18 for SQL Server};'
+        f'DRIVER={driver_path};'
         f'SERVER={os.getenv("BD_SERVER")};'
         f'DATABASE={os.getenv("BD_DATABASE")};'
         f'UID={os.getenv("BD_USERNAME")};'
