@@ -2,6 +2,7 @@ import logging
 import requests
 from datetime import datetime, timezone
 
+from .db import save_to_file
 # --- Tiempo ---
 
 def dt_to_ms(dt: datetime) -> int:
@@ -54,7 +55,7 @@ def obtain_assets(session: requests.Session, api_url_assets: str, headers: dict)
             break
     return data    
 
-def request_travel_time(session: requests.Session, api_url_trips: str, asset: dict, start_ms: int, end_ms: int, headers: dict) -> int:
+def request_travel_time(session: requests.Session, api_url_trips: str, asset: dict, start_ms, end_ms, headers: dict) -> int:
     after = None
     travel_time = 0
     
@@ -72,9 +73,16 @@ def request_travel_time(session: requests.Session, api_url_trips: str, asset: di
             if r.status_code != 200:
                 logging.error("Error en API Travel Time: status=%s body=%s", r.status_code, r.text)
                 return 0
-            body = r.json()    
+            body = r.json()
+            tmp = {
+                "Params": params,
+                "body": r.json()
+            }
+            # save_to_file(tmp, f"units\\{asset['name']}.json")
             for trip in body.get('trips', []):
-                s = trip.get('startMs'); e = trip.get('endMs')
+                s = trip.get('startMs'); 
+                e = trip.get('endMs') 
+                e = end_ms if e == 9223372036854775807 else e
                 if isinstance(s, int) and isinstance(e, int) and e >= s:
                     travel_time += (e - s) // 1000
             logging.debug("Asset %s: Trip de secs=%d", asset['name'], travel_time)

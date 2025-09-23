@@ -1,7 +1,7 @@
 import logging
 import pyodbc
 import json
-from .config import conn_str, BD_TABLE
+from .config import conn_str, BD_TABLE_NOW
 
 def connectdb():
     try:
@@ -11,7 +11,7 @@ def connectdb():
         logging.error("Error conectando a la base de datos: %s", e)
         raise
     
-def save_to_database(rows: list[tuple], fecha_str:str) -> int:
+def save_to_database(rows:list[tuple], fecha_str:str, tbl:str) -> int:
     # Establecer conexión a la base de datos
     
     if not rows:
@@ -26,12 +26,14 @@ def save_to_database(rows: list[tuple], fecha_str:str) -> int:
         cur = conn.cursor()
     
         try:
-            cur.fast_executeany = True
+            cur.fast_executemany = True
         except Exception:
             pass
+        if tbl == BD_TABLE_NOW:
+            cur.execute(f"TRUNCATE TABLE {tbl}")
         
         insert_sql = f"""
-        INSERT INTO {BD_TABLE} (idUnidad, nombreUnidad, fechaViaje, tiempoViaje, totalTiempoViaje)
+        INSERT INTO {tbl} (idUnidad, nombreUnidad, fechaViaje, tiempoViaje, totalTiempoViaje)
         VALUES (?, ?, ?, ?, ?)
         """
         
@@ -50,6 +52,6 @@ def save_to_database(rows: list[tuple], fecha_str:str) -> int:
         if conn:
             conn.close()
             
-def save_to_file(data):
-    with open('trips.json','w', encoding="utf-8") as f:
+def save_to_file(data, name):
+    with open(name,'w', encoding="utf-8") as f:
         json.dump(data, f ,indent=4, ensure_ascii=False)
