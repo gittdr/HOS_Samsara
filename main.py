@@ -34,15 +34,15 @@ def _debug_odbc():
     print("Driver files:", glob.glob("/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-*.so*"))
 
 def run() -> dict:
-    
-    execution_time = datetime.now()  # Adjust for debugging
+
+    execution_time = datetime.now().astimezone(pytz.timezone("America/Mexico_City"))  # Adjust for debugging
     local_time = execution_time.astimezone(pytz.timezone("America/Mexico_City")) if execution_time else None
     hoy_utc = local_time.astimezone(pytz.utc)
     hour = hoy_utc.hour if local_time else None
     minute = hoy_utc.minute if local_time else None
 
-    hoy_inicio_local = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    hoy_inicio = hoy_inicio_local.astimezone(pytz.timezone("America/Mexico_City")).astimezone(pytz.utc)
+    hoy_inicio = datetime.now().replace(hour=6, minute=0, second=0, microsecond=0)
+    # hoy_inicio = hoy_inicio_local.astimezone(pytz.timezone("America/Mexico_City"))
     # print("Hoy inicio (local):", hoy_inicio_local, "Hoy inicio (UTC):", hoy_inicio)
     # print("Hoy (local):", local_time, "Hoy (UTC):", hoy_utc)
     if hour == 6 and minute == 0:
@@ -76,8 +76,10 @@ def run() -> dict:
     count = 1
     for asset in assets:
         secs = request_travel_time(session, API_URL_TRIPS, asset, start_ms, end_ms, headers)
+        inicio = ms_to_dt(start_ms)
+        fin = ms_to_dt(end_ms)
         # logging.info("Unidad %s - segundos: %s - tiempo: %s - inicio: %s - fin: %s", asset['name'], secs, str(timedelta(seconds=secs)), ms_to_dt(start_ms), ms_to_dt(end_ms))
-        print(f"Count: {count} Unidad {asset['name']} - segundos: {secs} - tiempo: {str(timedelta(seconds=secs))}")
+        print(f"Count: {count} Unidad {asset['name']} - segundos: {secs} - tiempo: {str(timedelta(seconds=secs))} - inicio: {inicio} - fin: {fin}")
         count += 1
         rows.append((asset['id'], asset['name'], secs, str(timedelta(seconds=secs))))
         
@@ -97,7 +99,7 @@ def run() -> dict:
 
 def lambda_handler(event, context):
     try:
-        _debug_odbc()
+        # _debug_odbc()
         res = run()
         return {"statusCode": 200, "body": json.dumps(res)}
     except Exception as e:
@@ -107,16 +109,16 @@ def lambda_handler(event, context):
 if __name__ == "__main__":
     print(json.dumps(run(), ensure_ascii=False, indent=4))
 
-    # event = {
-    #     "version": "0",
-    #     "id": "a1b2c3d4-5678-90ab-cdef-EXAMPLE11111",
-    #     "detail-type": "Scheduled Event",
-    #     "source": "aws.events",
-    #     "account": "123456789012",
-    #     "time": "2025-09-22T18:00:00Z",
-    #     "region": "us-east-1",
-    #     "resources": ["arn:aws:events:us-east-1:123456789012:rule/MyRule"],
-    #     "detail": {}
-    # }
-    # context = {}
-    # lambda_handler(event, context)
+    event = {
+        "version": "0",
+        "id": "a1b2c3d4-5678-90ab-cdef-EXAMPLE11111",
+        "detail-type": "Scheduled Event",
+        "source": "aws.events",
+        "account": "123456789012",
+        "time": "2025-09-22T18:00:00Z",
+        "region": "us-east-1",
+        "resources": ["arn:aws:events:us-east-1:123456789012:rule/MyRule"],
+        "detail": {}
+    }
+    context = {}
+    lambda_handler(event, context)

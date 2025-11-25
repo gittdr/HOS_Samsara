@@ -102,6 +102,13 @@ CMD ["main.lambda_handler"]
 
 # # tag & push
 # docker tag lambda-image-hosamsara:latest 724064605175.dkr.ecr.mx-central-1.amazonaws.com/samsara/hos:latest
-# aws ecr get-login-password --region mx-central-1 ` | docker login --username AWS --password-stdin 724064605175.dkr.ecr.mx-central-1.amazonaws.com
+# aws ecr get-login-password --region mx-central-1 | docker login --username AWS --password-stdin 724064605175.dkr.ecr.mx-central-1.amazonaws.com
 # docker push 724064605175.dkr.ecr.mx-central-1.amazonaws.com/samsara/hos:latest
+
+# PowerShell
+# $env:DOCKER_BUILDKIT=0
+# docker build -t 724064605175.dkr.ecr.mx-central-1.amazonaws.com/samsara/hos:latest .
+# aws ecr get-login-password --region mx-central-1 | docker login --username AWS --password-stdin 724064605175.dkr.ecr.mx-central-1.amazonaws.com
+# docker push 724064605175.dkr.ecr.mx-central-1.amazonaws.com/samsara/hos:latest
+
 
