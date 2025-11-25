@@ -1,204 +1,122 @@
-import requests 
-import json
-import logging
-import os
-import pyodbc
-from dotenv import load_dotenv
-from datetime import datetime, timedelta, timezone
+import glob, json, logging, requests, pytz, os, pyodbc, subprocess
 
-load_dotenv()
+from datetime import datetime, timedelta
 
-required_env_vars = ["API_TOKEN", "API_URL_TRIPS", "API_URL_ASSETS", "BD_DRIVER", "BD_SERVER", "BD_DATABASE", "BD_USERNAME", "BD_PASSWORD", "BD_TABLE"]
-missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-existing_vars = [var for var in required_env_vars if os.getenv(var)]
-# print(str(existing_vars))
-if missing_vars:
-    raise EnvironmentError(f"Faltan las siguientes variables de entorno: {', '.join(missing_vars)}")
+from app.config import API_URL_ASSETS, API_URL_TRIPS, auth_headers, BD_TABLE_HIST, BD_TABLE_NOW
+from app.samsara_req import obtain_assets, request_travel_time, dt_to_ms, ms_to_dt
+from app.db import save_to_database, save_to_file
 
-bearer = os.getenv("API_TOKEN")
+log_filename = 'Logs\\test_log.log'
 
-hoy = datetime.now()
-log_filename = f".\\Logs\\HOS_{hoy.strftime('%Y-%m-%d_%H-%M-%S')}.log"
+# TODO: AJUSTAR PARA CLOUDWATCH
+# logging.basicConfig(
+#     filename = log_filename,
+#     level = logging.INFO,
+#     format = "%(asctime)s - %(levelname)s - %(message)s"
+# )
 
-hoy_inicio_mx = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-ayer_inicio_mx = hoy_inicio_mx - timedelta(days=1)
+# DONE: AJUSTAR PARA CLOUDWATCH
 
-headers = {
-        "accept": "application/json",
-        "authorization": "Bearer " + bearer
-    }
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-logging.basicConfig(
-    filename = log_filename,
-    level = logging.WARNING,
-    format = "%(asctime)s - %(levelname)s - %(message)s"
-)
-
-def dt_to_ms(dt: datetime) -> int:
+def _debug_odbc():
+    print("LD_LIBRARY_PATH:", os.environ.get("LD_LIBRARY_PATH"))
+    print("ODBCINSTINI:", os.environ.get("ODBCINSTINI"))
     try:
-        if dt.tzinfo is None:  # naive
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:  # aware
-            dt = dt.astimezone(timezone.utc)
-        return int(dt.timestamp() * 1000)
+        out = subprocess.check_output(["cat", "/etc/odbcinst.ini"]).decode()
+        print("/etc/odbcinst.ini:\n", out)
     except Exception as e:
-        logging.error("Error converting date to ms: %s", e)
-        return 0
-    
-def ms_to_dt(ms: int) -> datetime:
-    return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
-
-def request_travel_time(asset_id, start_ms, end_ms, headers):
-    after = None
-    hasPagination = True
-    travel_time = 0
-    
-    params = {
-        "vehicleId": asset_id.get('id'),
-        "startMs": start_ms,
-        "endMs": end_ms
-    }
-    
-    
-    while hasPagination:
-        if after:
-            params["after"] = after
-            
-        try:
-            response = requests.get(os.getenv('API_URL_TRIPS'), headers=headers, params=params, timeout=30)
-            if response.status_code != 200:
-                logging.error("Error en API Travel Time: status=%s body=%s", response.status_code, response.text)
-                return 0
-            trips = response.json()    
-                
-            for trip in trips.get('trips', []):
-                data = ((trip['endMs'] - trip['startMs']) // 1000)
-                travel_time += data
-            pagination = trips.get("pagination", {}) or {}
-            if pagination.get("hasNextPage"):
-                endCursor = pagination.get("endCursor")
-                if not endCursor:
-                    logging.error("Error: endCursor no encontrado en la paginación")
-                    break
-                after = pagination.get("endCursor")
-            else:
-                hasPagination = False
-        except requests.exceptions.RequestException as e:
-            logging.error("Error en el request a la API: %s", e)
-            return 0
-    return travel_time
-
-def obtain_assets(headers):
-    after = None
-    data = []
-    
-    hasPagination = True
-    
-    while hasPagination:
-        params = {"type":"vehicle"}
-        if after:
-            params["after"] = after
-            
-        try:
-            response = requests.get(os.getenv('API_URL_ASSETS'), headers=headers, params=params, timeout=30)
-            if response.status_code != 200:
-                logging.error("Error en API Assets: status=%s body=%s", response.status_code, response.text)
-                break
-            
-            data_response = response.json()
-            # save_to_file(data_response)
-        except requests.exceptions.RequestException as e:
-            logging.error("Error en API Assets (request): %s", e)
-            break
-        
-        try:
-            for asset in data_response.get('data', []):
-                # print(asset)
-                if "name" in asset and "id" in asset:
-                    data.append({"name": asset["name"],"id": asset["id"]})
-                
-        except Exception as e:
-            logging.error("Error procesando los datos de la API: %s", e)
-            break
-        
-        pagination = data_response.get("pagination") or {}
-        if pagination.get("hasNextPage"):
-            endCursor = pagination.get("endCursor")
-            if not endCursor:
-                logging.error("Paginación inconsistente: endCursor no encontrado")
-                break
-            after = endCursor
-        else:
-            hasPagination = False
-    return data
-
-def save_to_file(data):
-    with open('trips.json','w', encoding="utf-8") as f:
-        json.dump(data, f ,indent=4, ensure_ascii=False)
-# count = 1
-
-def save_to_database(data):
-    # Establecer conexión a la base de datos
-    
-    conn = pyodbc.connect(
-        f'DRIVER={{ODBC Driver 18 for SQL Server}};'
-        f'SERVER={os.getenv("BD_SERVER")};'
-        f'DATABASE={os.getenv("BD_DATABASE")};'
-        f'UID={os.getenv("BD_USERNAME")};'
-        f'PWD={os.getenv("BD_PASSWORD")};'
-        'TrustServerCertificate=yes;'
-        'Encrypt=yes;'
-    )
-    bd = os.getenv('BD_TABLE')
-    
+        print("cat /etc/odbcinst.ini error:", repr(e))
     try:
-        cursor = conn.cursor()
-        cursor.execute(f"TRUNCATE TABLE {bd};")
-
-        # Insertar los registros en la BD
-        
-        for trc in data:
-            cursor.execute(f"""
-                INSERT INTO {bd} (idUnidad, nombreUnidad, fechaViaje, tiempoViaje, totalTiempoViaje)
-                VALUES (?, ?, ?, ?, ?)
-            """, trc['asset_id'], trc['asset_name'], ayer_inicio_mx.strftime('%Y-%m-%d'), trc['traveltimeSeconds'], trc['TravelTime'])
-
-        conn.commit()
+        print("pyodbc.drivers():", pyodbc.drivers())
     except Exception as e:
-        logging.error("Error al guardar en la base de datos: %s", e)
-        if conn:
-            conn.rollback()
-        raise
-    finally:
-        if conn:
-            conn.close()
+        print("pyodbc.drivers() error:", repr(e))
+    print("Driver files:", glob.glob("/opt/microsoft/msodbcsql18/lib64/libmsodbcsql-*.so*"))
 
+def run() -> dict:
+    
+    execution_time = datetime.now()  # Adjust for debugging
+    local_time = execution_time.astimezone(pytz.timezone("America/Mexico_City")) if execution_time else None
+    hoy_utc = local_time.astimezone(pytz.utc)
+    hour = hoy_utc.hour if local_time else None
+    minute = hoy_utc.minute if local_time else None
 
-start_ms = dt_to_ms(ayer_inicio_mx)
-end_ms = dt_to_ms(hoy_inicio_mx)
-assets = obtain_assets(headers)
-assets_data = []
-
-for asset in assets:
-    traveltime = request_travel_time(asset, start_ms, end_ms, headers)
-    asset_data = {
-        "asset_id" : asset['id'],
-        "asset_name" : asset['name'],
-        "traveltimeSeconds" : traveltime,
-        "TravelTime" : str(timedelta(seconds=traveltime))
+    hoy_inicio_local = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    hoy_inicio = hoy_inicio_local.astimezone(pytz.timezone("America/Mexico_City")).astimezone(pytz.utc)
+    # print("Hoy inicio (local):", hoy_inicio_local, "Hoy inicio (UTC):", hoy_inicio)
+    # print("Hoy (local):", local_time, "Hoy (UTC):", hoy_utc)
+    if hour == 6 and minute == 0:
+        ayer_inicio = hoy_inicio - timedelta(days=1)
+        start_ms = dt_to_ms(ayer_inicio)
+        end_ms = dt_to_ms(hoy_inicio)
+        fecha_str = ayer_inicio.strftime('%Y-%m-%d')
+        tbl = BD_TABLE_HIST
+    elif not hour:
+        logging.warning(f"La hora de ejecución no está disponible: {execution_time}, se usará el rango desde el inicio del día hasta ahora.")
+        start_ms = dt_to_ms(hoy_inicio)
+        end_ms = dt_to_ms(datetime.now())
+        fecha_str = hoy_inicio.strftime('%Y-%m-%d')
+        tbl = BD_TABLE_NOW
+    else:
+        start_ms = dt_to_ms(hoy_inicio)
+        end_ms = dt_to_ms(hoy_utc)
+        fecha_str = hoy_inicio.strftime('%Y-%m-%d')
+        tbl = BD_TABLE_NOW
+    
+    headers = auth_headers()
+    session = requests.Session()
+    
+    # 1 Obtener assets
+    assets = obtain_assets(session, API_URL_ASSETS, headers)
+    logging.info("Assets obtenidos: %d", len(assets))
+    print(f"Assets obtenidos: {len(assets)}")
+    
+    # 2 Por cada asset, obtener travel time
+    rows = [] 
+    count = 1
+    for asset in assets:
+        secs = request_travel_time(session, API_URL_TRIPS, asset, start_ms, end_ms, headers)
+        # logging.info("Unidad %s - segundos: %s - tiempo: %s - inicio: %s - fin: %s", asset['name'], secs, str(timedelta(seconds=secs)), ms_to_dt(start_ms), ms_to_dt(end_ms))
+        print(f"Count: {count} Unidad {asset['name']} - segundos: {secs} - tiempo: {str(timedelta(seconds=secs))}")
+        count += 1
+        rows.append((asset['id'], asset['name'], secs, str(timedelta(seconds=secs))))
+        
+    # 3 Guardar en BD
+    inserted = save_to_database(rows, fecha_str, tbl)
+    logging.info("Registros insertados en BD: %d", inserted)
+    
+    result = {
+        "date": fecha_str,
+        "assets": len(assets),
+        "inserted": inserted,
+        "total_seconds": sum(r[2] for r in rows)
     }
-    # print("count", count, "asset_data", asset_data)
-    assets_data.append(asset_data)
-    # count += 1
 
-data = {
-    "date": ayer_inicio_mx.strftime('%Y-%m-%d'),
-    "assets": assets_data
-}
+    logging.info("Resultado de la ejecución: %s", result)
+    return result
 
-# with open('trips.json', 'r', encoding="utf-8") as f:
-#     data = json.load(f)
+def lambda_handler(event, context):
+    try:
+        _debug_odbc()
+        res = run()
+        return {"statusCode": 200, "body": json.dumps(res)}
+    except Exception as e:
+        logging.error("Error en el lambda_handler: %s", e)
+        return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
 
-save_to_database(data.get('assets'))
+if __name__ == "__main__":
+    print(json.dumps(run(), ensure_ascii=False, indent=4))
 
-
+    # event = {
+    #     "version": "0",
+    #     "id": "a1b2c3d4-5678-90ab-cdef-EXAMPLE11111",
+    #     "detail-type": "Scheduled Event",
+    #     "source": "aws.events",
+    #     "account": "123456789012",
+    #     "time": "2025-09-22T18:00:00Z",
+    #     "region": "us-east-1",
+    #     "resources": ["arn:aws:events:us-east-1:123456789012:rule/MyRule"],
+    #     "detail": {}
+    # }
+    # context = {}
+    # lambda_handler(event, context)

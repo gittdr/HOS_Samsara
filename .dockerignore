@@ -1,0 +1,24 @@
+# Entornos virtuales
+venv/
+.env
+
+# Archivos de configuración locales
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+
+# Logs y temporales
+Logs/
+*.log
+*.tmp
+*.swp
+
+# Git
+.git
+.gitignore
+
+# Archivos de desarrollo
+Dockerfile   # ⚠️ Opcional: solo si no quieres que se copie dentro de la imagen
+dockerfile   # (porque lo tienes con minúscula)
+example.env
